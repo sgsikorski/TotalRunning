@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:petitparser/petitparser.dart';
 
 class Calculator extends StatefulWidget{
   const Calculator({super.key});
@@ -8,28 +7,8 @@ class Calculator extends StatefulWidget{
   State<Calculator> createState() => _CalculatorState();
 }
 
-class _CalculatorState extends State<Calculator>{
-  Parser buildCalcParser(){
-    final builder = ExpressionBuilder();
-    builder.primitive((pattern('+-').optional() &
-        digit().plus() &
-        (char('.') & digit().plus()).optional() &
-        (char(':') & digit().plus()) &
-        (pattern('eE') & pattern('+-').optional() & digit().plus()).optional())
-        .flatten('number expected'));
-    builder.group().wrapper(char('(').trim(), char(')').trim(), (left, value, right) => value);
-    builder.group().prefix(char('-').trim(), (operator, value) => -value);
-    builder.group()
-      ..left(char('*').trim(), (left, operator, right) => left * right)
-      ..left(char('/').trim(), (left, operator, right) => left / right);
-    builder.group()
-      ..left(char('+').trim(), (left, operator, right) => left + right)
-      ..left(char('-').trim(), (left, operator, right) => left - right);
-    return builder.build().end();
-  }
-  
+class _CalculatorState extends State<Calculator>{ 
   String displayText = '';
-  String mode = 'time';
   Widget buildButton(String buttonText) {
     return Expanded(
       child: OutlinedButton(
@@ -54,19 +33,91 @@ class _CalculatorState extends State<Calculator>{
   // xx.xx   xx.xx      xx:xx
   // speed = distance / time
 
-  double evaluate(String expression) {
-    // Implement your own evaluation logic
-    return 42.0; // Placeholder result
+  String evaluate(String expression) {
+    List<String> operands = expression.split(RegExp(r'[+\-*/]'));
+    List<bool> isTime = operands.map((operand) => operand.contains(':')).toList();
+    List<String> operators = RegExp(r'[+\-*/]')
+      .allMatches(expression)
+      .map((match) => match.group(0)!)
+      .toList();
+    // Convert time to seconds
+    for (int i = 0; i < operands.length; i++){
+      bool currIsTime = operands[i].contains(':');
+      List<String> vals = operands[i].split(RegExp(r'[:.]'));
+      if (vals.length > 3){
+        throw Exception('Too long');
+      }
+      if (currIsTime){
+        if (vals.length == 2){
+          operands[i] = (int.parse(vals[0]) * 60 + int.parse(vals[1])).toString();
+        } else if (vals.length == 3){
+          operands[i] = (int.parse(vals[0]) * 3600 + int.parse(vals[1]) * 60 + int.parse(vals[2])).toString();
+        }
+      }
+    }
+    double result = double.parse(operands[0]);
+    for (int i = 0; i < operators.length; i++){
+      isTime[i+1] = isTime[i] && !isTime[i+1];
+      switch (operators[i]){
+        case '+':
+          if (isTime[i]!=isTime[i+1]) throw Exception('Cannot add time and distance');
+          result += double.parse(operands[i + 1]);
+          break;
+        case '-':
+          if (isTime[i]!=isTime[i+1]) throw Exception('Cannot subtract time and distance');
+          result -= double.parse(operands[i + 1]);
+          break;
+        case '*':
+          result *= double.parse(operands[i + 1]);
+          break;
+        case '/':
+          result /= double.parse(operands[i + 1]);
+          break;
+      }
+    }
+    if (isTime.last){
+      int seconds = result.floor();
+      int minutes = (seconds / 60).floor();
+      int hours = (minutes / 60).floor();
+      seconds -= minutes * 60;
+      minutes -= hours * 60;
+      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    return result.toString();
   }
 
   void buttonPressed(String buttonText) {
     setState(() {
+      if (buttonText == 'Help'){
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Help'),
+            content: const Text('''xx:xx  xx:xx  xx.xx 
+                                    time = pace * distance
+                                    xx.xx      xx:xx  xx:xx
+                                    distance = time / pace
+                                    xx:xx  xx:xx  xx.xx
+                                    pace = time / distance
+                                    xx.xx   xx.xx      xx:xx
+                                    speed = distance / time'''),
+            actions: <Widget>[
+              TextButton(
+                child: Text('Okay'),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                },
+              ),
+            ],
+          ),
+        );
+      }
       if (buttonText == 'C') {
         displayText = '';
       } else if (buttonText == '=') {
         // Perform calculation
         try{
-          displayText = evaluate(displayText).toString();
+          displayText = evaluate(displayText);
         } catch (e) {
           displayText = 'Error';
         }
@@ -75,8 +126,6 @@ class _CalculatorState extends State<Calculator>{
         if (displayText.isNotEmpty){
           displayText = displayText.substring(0, displayText.length - 1);
         }
-      } else if (buttonText == ':' || buttonText == '.'){
-        mode = 'time';
       }
       else {
         if (displayText == '0') {
@@ -110,9 +159,9 @@ class _CalculatorState extends State<Calculator>{
           Column(
             children: [
               Row(children: <Widget>[
-                  buildButton('C'),
-                  buildButton("<-"),
-                  buildButton(':/.'),
+                  buildButton("Help"),
+                  buildButton("C"),
+                  buildButton('<-'),
                   buildButton('/')
                 ]
               ),
